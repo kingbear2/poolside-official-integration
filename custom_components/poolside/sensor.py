@@ -1216,6 +1216,7 @@ class PoolsideBodyDoseSensor(PoolsideGroupEntity, SensorEntity):
         super().__init__(client, group)
         self.entity_description = description
         self._group = group
+        self._device = device
         self._body_of_water_uuid = body_of_water_uuid
         self._attr_unique_id = (
             f"{client.controller_uuid}_{body_of_water_uuid}_{description.key}"

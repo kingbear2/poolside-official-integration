@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from typing import override
 
 from . import PoolsideConfigEntry
-from .entity import PoolsideGroupEntity
+from .const import DOMAIN
+from .entity import PoolsideEntity, PoolsideGroupEntity
 
 DOSE_KEY_TO_CHEMICAL = {
     "acid_dose": "acid",
@@ -35,15 +37,25 @@ async def async_setup_entry(
     )
 
 
-class PoolsideDoseResetButton(PoolsideGroupEntity, ButtonEntity):
-    """Resets one chemical's dosed-since-reset counter to zero."""
+class PoolsideDoseResetButton(PoolsideEntity, ButtonEntity):
+    """Resets one chemical's dosed-since-reset counter to zero.
+
+    Attaches to the same device as its dose sensor - the chemical pump
+    device when the site reports one (passed through on the sensor), so
+    the reset control lives with the counter it zeroes.
+    """
 
     _attr_translation_key = "dose_reset"
     _attr_entity_registry_enabled_default = False
 
     def __init__(self, client, dose_sensor) -> None:
         """Set up the reset button for one chemical of a body of water."""
-        super().__init__(client, dose_sensor._group)
+        client, group = dose_sensor._client, dose_sensor._group
+        super().__init__(client, group)
+        if getattr(dose_sensor, "_device", None) is not None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, dose_sensor._device.uuid)}
+            )
         self._dose_sensor = dose_sensor
         chemical = DOSE_KEY_TO_CHEMICAL.get(
             dose_sensor.entity_description.key,
