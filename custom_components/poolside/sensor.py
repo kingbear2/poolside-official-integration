@@ -226,7 +226,7 @@ WATER_QUALITY_OPTIONS = ["good", "ok", "low", "alert", "none"]
 # device's model carries ("Acid" Acid pump, "LiquidChlorine" chlorine pump).
 DOSE_KEY_TO_CHEMICAL_TYPE = {
     "acid_dose": "ACID",
-    "chlorine_dose": "LIQUIDCHLORINE",
+    "chlorine_dose": "CHLOR",
     "salt_chlorinator_dose": "SALT",
 }
 
