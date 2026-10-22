@@ -475,16 +475,21 @@ def _chemical_pump_device(
     """Return the chemical pump device a dose key's entities attach to.
 
     Dose items are keyed to a chemical (acid, liquid chlorine, salt), and
-    its pump is identified by the `ChemicalType` its model carries - the
-    only per-chemical identifier every install has. Unknown pairings
-    return None and the caller falls back to the body group device.
+    its pump is identified by its vendor-assigned device name ("Acid
+    Pump"); all chemical pumps share the generic ChemicalPump device
+    type, so the name is the only per-chemical identifier installs
+    carry. Unknown pairings return None and the caller falls back to the
+    body group device.
     """
     chemical = DOSE_KEY_TO_CHEMICAL_TYPE.get(dose_key)
     if chemical is None:
         return None
     for device in pool_devices:
-        model = str(getattr(device, "model", "") or "")
-        if model and chemical in model.upper():
+        name = str(getattr(device, "name", "") or "").upper()
+        type_ = str(getattr(device, "device_type", "") or "").upper()
+        if type_ != "CHEMICALPUMP":
+            continue
+        if chemical in name:
             return device
     return None
 
@@ -494,7 +499,9 @@ def _heater_device(
 ) -> PoolsideDevice | None:
     """Return the pool heater device, if the site has one."""
     for device in pool_devices:
-        if str(getattr(device, "model", "") or "").upper() == "HEATER":
+        type_ = str(getattr(device, "device_type", "") or "").upper()
+        name = str(getattr(device, "name", "") or "").upper()
+        if type_ == "HEATER" or "HEATER" in name:
             return device
     return None
 
