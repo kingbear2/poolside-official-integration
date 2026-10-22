@@ -27,7 +27,7 @@ from custom_components.poolside.sensor import (
 # A real dose event captured from a controller's Device.setStatus push, as
 # it arrives on the wire: the document JSON-encoded inside the string value.
 REAL_DOSE_EVENT = {
-    "UUID": "9d5365d1-d267-49f2-afa4-a44a09bd7943",
+    "UUID": "aaaaaaaa-bb1c-4d22-9333-eeeeeeee4444",  # synthetic UUID for tests
     "StartDateTime": "2026-08-31T13:58:16.8837444-05:00",
     "EndDateTime": "2026-08-31T14:24:24.8837657-05:00",
     "DoseSeconds": 68,
@@ -64,7 +64,7 @@ def _encoded(value) -> str:
     return json.dumps(value)
 
 
-BODY = "fb773a00-3b89-41d6-ac73-37d4b87a6203"
+BODY = "00000000-1111-4222-8333-444444444555"  # synthetic UUID for tests
 
 
 def test_dose_event_json_string_parses():
