@@ -103,13 +103,13 @@
         "default": "mdi:snowflake"
       },
       "acid_dose_total": {
-        "default": "mdi:counter"
+        "default": "mdi:flask-plus"
       },
       "chlorine_dose_total": {
-        "default": "mdi:counter"
+        "default": "mdi:bottle-tonic-plus"
       },
       "salt_chlorinator_dose_total": {
-        "default": "mdi:counter"
+        "default": "mdi:flask-plus"
       }
     },
     "switch": {
@@ -122,7 +122,7 @@
     },
     "button": {
       "dose_reset": {
-        "default": "mdi:restart"
+        "default": "mdi:restart-alert"
       }
     }
   }

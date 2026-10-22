@@ -222,6 +222,14 @@ DOSE_EVENT_SENSORS = (
 # crashing the state property.
 WATER_QUALITY_OPTIONS = ["good", "ok", "low", "alert", "none"]
 
+# Dose sensor keys mapped to the ChemicalType string the matching pump
+# device's model carries ("Acid" Acid pump, "LiquidChlorine" chlorine pump).
+DOSE_KEY_TO_CHEMICAL_TYPE = {
+    "acid_dose": "ACID",
+    "chlorine_dose": "LIQUIDCHLORINE",
+    "salt_chlorinator_dose": "SALT",
+}
+
 
 @dataclass(frozen=True, kw_only=True)
 class PoolsideBodyEnergySensorDescription(SensorEntityDescription):
@@ -461,8 +469,37 @@ def _energy_total_reported(
     return document is not None and document.get(description.document_key) is not None
 
 
+def _chemical_pump_device(
+    pool_devices: list[PoolsideDevice], dose_key: str
+) -> PoolsideDevice | None:
+    """Return the chemical pump device a dose key's entities attach to.
+
+    Dose items are keyed to a chemical (acid, liquid chlorine, salt), and
+    its pump is identified by the `ChemicalType` its model carries - the
+    only per-chemical identifier every install has. Unknown pairings
+    return None and the caller falls back to the body group device.
+    """
+    chemical = DOSE_KEY_TO_CHEMICAL_TYPE.get(dose_key)
+    if chemical is None:
+        return None
+    for device in pool_devices:
+        model = str(getattr(device, "model", "") or "")
+        if model and chemical in model.upper():
+            return device
+    return None
+
+
+def _heater_device(
+    pool_devices: list[PoolsideDevice],
+) -> PoolsideDevice | None:
+    """Return the pool heater device, if the site has one."""
+    for device in pool_devices:
+        if str(getattr(device, "model", "") or "").upper() == "HEATER":
+            return device
+    return None
+
+
 def _water_quality_value(value: Any) -> str | None:
-    """Map a WaterQualityState raw value to its option, or None if unrecognized."""
     if value is None:
         return None
     text = str(value).strip().lower()
@@ -859,7 +896,11 @@ async def async_setup_entry(
                 )
             # Dose events are added eagerly (visible immediately as no data
             # until a dose runs); the salt chlorinator's item only exists on
-            # salt sites, so that one waits for its first push.
+            # salt sites, so that one waits for its first push. Each dose
+            # sensor, its total, and its reset button attach to the chemical
+            # pump device behind the chemical (matched by pump model, the
+            # only per-chemical identifier every install carries), falling
+            # back to the body group device on installs that report none.
             for description in DOSE_EVENT_SENSORS:
                 added_key = f"{body_of_water_uuid}_{description.key}"
                 if (
@@ -874,16 +915,28 @@ async def async_setup_entry(
                 ):
                     continue
                 added.add(added_key)
-                dose_sensor = PoolsideBodyDoseSensor(
-                    client, group, body_of_water_uuid, description
+                pump_device = _chemical_pump_device(
+                    data.pool_devices, description.key
                 )
-                new_entities.append(dose_sensor)
-                added.add(f"{added_key}_total")
-                new_entities.append(
-                    PoolsideDoseTotalSensor(
+                if pump_device is None:
+                    dose_sensor = PoolsideBodyDoseSensor(
+                        client, group, body_of_water_uuid, description
+                    )
+                    total_sensor = PoolsideDoseTotalSensor(
                         client, group, body_of_water_uuid, dose_sensor
                     )
-                )
+                else:
+                    dose_sensor = PoolsideBodyDoseSensor(
+                        client, group, body_of_water_uuid, description,
+                        device=pump_device,
+                    )
+                    total_sensor = PoolsideDoseTotalSensor(
+                        client, group, body_of_water_uuid, dose_sensor,
+                        device=pump_device,
+                    )
+                new_entities.append(dose_sensor)
+                added.add(f"{added_key}_total")
+                new_entities.append(total_sensor)
                 # Registered for the button platform's reset buttons, which
                 # set up after sensors (PLATFORMS order).
                 data.dose_handlers[f"{body_of_water_uuid}_{description.key}"] = (
@@ -903,18 +956,23 @@ async def async_setup_entry(
                         client, group, body_of_water_uuid
                     )
                 )
-            # Energy sensors are added eagerly too, so installs see them
-            # right away; totals the body's equipment doesn't report stay
-            # as no data rather than never materializing (this body's
-            # heater is gas? its electric total still shows).
+            # Gas consumption attaches to the heater device (it's the
+            # heater's fuel burn); electric watts is a whole-body figure
+            # and stays on the body group device.
             for description in ENERGY_SENSORS:
                 added_key = f"{body_of_water_uuid}_{description.key}"
                 if added_key in added:
                     continue
                 added.add(added_key)
+                attach_device = (
+                    heater_device
+                    if description.key == "gas_consumption"
+                    else None
+                )
                 new_entities.append(
                     PoolsideBodyEnergySensor(
-                        client, group, body_of_water_uuid, description
+                        client, group, body_of_water_uuid, description,
+                        device=attach_device,
                     )
                 )
         if new_entities:
@@ -930,14 +988,19 @@ async def async_setup_entry(
 
     # Heater "egg timer" sensors are added eagerly for every temperature
     # control; while no timed session runs the value is no data. A heater
-    # that can never report the item simply stays at no data.
+    # that can never report the item simply stays at no data. Timer and
+    # gas sensors attach to the heater device when the site has one.
+    heater_device = _heater_device(data.pool_devices)
     heaters = [
         control
         for control in data.controls
         if control.control_type is ControlType.TEMPERATURE
     ]
     async_add_entities(
-        PoolsideControlOnUntilSensor(client, control) for control in heaters
+        PoolsideControlOnUntilSensor(
+            client, control, device=heater_device
+        )
+        for control in heaters
     )
 
     # Pre-seeded so a descriptor that lists ActualPowerState or Winterized
@@ -1146,6 +1209,7 @@ class PoolsideBodyDoseSensor(PoolsideGroupEntity, SensorEntity):
         group: PoolsideGroup,
         body_of_water_uuid: str,
         description: PoolsideBodySensorDescription,
+        device: PoolsideDevice | None = None,
     ) -> None:
         """Set up the last-dose sensor for one chemical of a body of water."""
         super().__init__(client, group)
@@ -1155,6 +1219,10 @@ class PoolsideBodyDoseSensor(PoolsideGroupEntity, SensorEntity):
         self._attr_unique_id = (
             f"{client.controller_uuid}_{body_of_water_uuid}_{description.key}"
         )
+        if device is not None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, device.uuid)}
+            )
         self._last_document: dict[str, Any] | None = None
         self._seen_dose_uuids: set[str] | None = None
         self._total_sensor: PoolsideDoseTotalSensor | None = None
@@ -1234,6 +1302,7 @@ class PoolsideDoseTotalSensor(
         group: PoolsideGroup,
         body_of_water_uuid: str,
         dose_sensor: PoolsideBodyDoseSensor,
+        device: PoolsideDevice | None = None,
     ) -> None:
         """Set up the dose-total sensor for one chemical of a body of water."""
         super().__init__(client, group)
@@ -1246,6 +1315,10 @@ class PoolsideDoseTotalSensor(
         self._attr_native_unit_of_measurement = (
             dose_sensor.entity_description.native_unit_of_measurement
         )
+        if device is not None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, device.uuid)}
+            )
         self._dose_sensor = dose_sensor
         self._total: float = 0.0
         self._restored_uuids: set[str] = set()
@@ -1359,6 +1432,7 @@ class PoolsideBodyEnergySensor(PoolsideGroupEntity, SensorEntity):
         group: PoolsideGroup,
         body_of_water_uuid: str,
         description: PoolsideBodyEnergySensorDescription,
+        device: PoolsideDevice | None = None,
     ) -> None:
         """Set up one energy reading for a given body of water."""
         super().__init__(client, group)
@@ -1367,6 +1441,10 @@ class PoolsideBodyEnergySensor(PoolsideGroupEntity, SensorEntity):
         self._attr_unique_id = (
             f"{client.controller_uuid}_{body_of_water_uuid}_{description.key}"
         )
+        if device is not None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, device.uuid)}
+            )
 
     @override
     def _status_keys(self) -> set[str]:
@@ -1406,11 +1484,20 @@ class PoolsideControlOnUntilSensor(PoolsideEntity, SensorEntity):
     _attr_translation_key = "on_until"
     _use_translated_name = True
 
-    def __init__(self, client: PoolsideClient, control: PoolsideControl) -> None:
+    def __init__(
+        self,
+        client: PoolsideClient,
+        control: PoolsideControl,
+        device: PoolsideDevice | None = None,
+    ) -> None:
         """Set up the egg timer sensor for a heater control."""
         super().__init__(client, control)
         self._attr_unique_id = f"{client.controller_uuid}_{control.uuid}_on_until"
         self._attr_translation_placeholders = {"control_name": control.name}
+        if device is not None:
+            self._attr_device_info = DeviceInfo(
+                identifiers={(DOMAIN, device.uuid)}
+            )
 
     @property
     @override

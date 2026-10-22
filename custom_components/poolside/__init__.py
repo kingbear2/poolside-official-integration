@@ -38,13 +38,13 @@ from .const import (
 from .entity import control_platform
 
 PLATFORMS = [
-    Platform.BUTTON,
     Platform.CLIMATE,
     Platform.FAN,
     Platform.LIGHT,
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
+    Platform.BUTTON,
 ]
 
 
