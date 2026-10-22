@@ -101,6 +101,15 @@
       },
       "winterized": {
         "default": "mdi:snowflake"
+      },
+      "acid_dose_total": {
+        "default": "mdi:counter"
+      },
+      "chlorine_dose_total": {
+        "default": "mdi:counter"
+      },
+      "salt_chlorinator_dose_total": {
+        "default": "mdi:counter"
       }
     },
     "switch": {
@@ -109,6 +118,11 @@
       },
       "water_feature": {
         "default": "mdi:fountain"
+      }
+    },
+    "button": {
+      "dose_reset": {
+        "default": "mdi:restart"
       }
     }
   }

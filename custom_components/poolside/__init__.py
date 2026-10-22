@@ -2,7 +2,7 @@
 
 from base64 import b64decode
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from aiopoolside import (
     PoolsideAuthError,
@@ -38,6 +38,7 @@ from .const import (
 from .entity import control_platform
 
 PLATFORMS = [
+    Platform.BUTTON,
     Platform.CLIMATE,
     Platform.FAN,
     Platform.LIGHT,
@@ -55,6 +56,10 @@ class PoolsideData:
     site: PoolsideSite
     controls: list[PoolsideControl]
     pool_devices: list[PoolsideDevice]
+    # Per-body dosing sensors, by `<body uuid>_<dose key>`: the button
+    # platform's reset buttons pair to the sensor platform's dose sensors
+    # through this (sensors are created first in the PLATFORMS order).
+    dose_handlers: dict = field(default_factory=dict)
 
 
 type PoolsideConfigEntry = ConfigEntry[PoolsideData]

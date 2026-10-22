@@ -74,6 +74,7 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_point_in_utc_time
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from . import PoolsideConfigEntry
@@ -108,6 +109,7 @@ from .entity import (
     PoolsideGroupEntity,
     confirmed_status,
 )
+from .button import PoolsideDoseResetButton
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -264,7 +266,7 @@ def _float_value(value: Any) -> float | None:
     """Coerce a telemetry value to a number, or None if it isn't one."""
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
@@ -855,20 +857,37 @@ async def async_setup_entry(
                 new_entities.append(
                     PoolsideBodySensor(client, group, body_of_water_uuid, description)
                 )
-            # Only bodies with a chemical dosing system report dose events;
-            # the salt chlorinator's item only exists on salt sites.
+            # Dose events are added eagerly (visible immediately as no data
+            # until a dose runs); the salt chlorinator's item only exists on
+            # salt sites, so that one waits for its first push.
             for description in DOSE_EVENT_SENSORS:
                 added_key = f"{body_of_water_uuid}_{description.key}"
                 if (
                     added_key in added
-                    or client.get_status(body_of_water_uuid, description.field) is None
+                    or (
+                        description.key == "salt_chlorinator_dose"
+                        and client.get_status(
+                            body_of_water_uuid, description.field
+                        )
+                        is None
+                    )
                 ):
                     continue
                 added.add(added_key)
+                dose_sensor = PoolsideBodyDoseSensor(
+                    client, group, body_of_water_uuid, description
+                )
+                new_entities.append(dose_sensor)
+                added.add(f"{added_key}_total")
                 new_entities.append(
-                    PoolsideBodyDoseSensor(
-                        client, group, body_of_water_uuid, description
+                    PoolsideDoseTotalSensor(
+                        client, group, body_of_water_uuid, dose_sensor
                     )
+                )
+                # Registered for the button platform's reset buttons, which
+                # set up after sensors (PLATFORMS order).
+                data.dose_handlers[f"{body_of_water_uuid}_{description.key}"] = (
+                    dose_sensor
                 )
             water_quality_key = f"{body_of_water_uuid}_water_quality"
             if (
@@ -884,16 +903,13 @@ async def async_setup_entry(
                         client, group, body_of_water_uuid
                     )
                 )
-            # Only bodies on controller firmware reporting the last-minute
-            # energy document get energy sensors, and each one waits for
-            # its own total (a body heated electrically never grows a gas
-            # sensor).
+            # Energy sensors are added eagerly too, so installs see them
+            # right away; totals the body's equipment doesn't report stay
+            # as no data rather than never materializing (this body's
+            # heater is gas? its electric total still shows).
             for description in ENERGY_SENSORS:
                 added_key = f"{body_of_water_uuid}_{description.key}"
-                if (
-                    added_key in added
-                    or not _energy_total_reported(client, body_of_water_uuid, description)
-                ):
+                if added_key in added:
                     continue
                 added.add(added_key)
                 new_entities.append(
@@ -912,38 +928,17 @@ async def async_setup_entry(
             )
         )
 
-    # Heater controls with a timed session ("egg timer") report OnUntil;
-    # like the heating/cooling mode selects, the sensor is added the first
-    # time the control reports the item, and heaters that never do (no
-    # timer in use) never grow the entity.
+    # Heater "egg timer" sensors are added eagerly for every temperature
+    # control; while no timed session runs the value is no data. A heater
+    # that can never report the item simply stays at no data.
     heaters = [
         control
         for control in data.controls
         if control.control_type is ControlType.TEMPERATURE
     ]
-    added_on_until: set[str] = set()
-
-    @callback
-    def _async_add_reported_on_until_sensors() -> None:
-        new_entities: list[SensorEntity] = []
-        for control in heaters:
-            added_key = f"{control.uuid}_on_until"
-            if (
-                added_key in added_on_until
-                or confirmed_status(client, control, ON_UNTIL_FIELD) is None
-            ):
-                continue
-            added_on_until.add(added_key)
-            new_entities.append(PoolsideControlOnUntilSensor(client, control))
-        if new_entities:
-            async_add_entities(new_entities)
-
-    _async_add_reported_on_until_sensors()
-    for control in heaters:
-        for key in {control.status_key, control.uuid, *control.member_uuids}:
-            entry.async_on_unload(
-                client.subscribe_status(key, _async_add_reported_on_until_sensors)
-            )
+    async_add_entities(
+        PoolsideControlOnUntilSensor(client, control) for control in heaters
+    )
 
     # Pre-seeded so a descriptor that lists ActualPowerState or Winterized
     # itself doesn't collide with the dedicated sensors created above.
@@ -1136,6 +1131,11 @@ class PoolsideBodyDoseSensor(PoolsideGroupEntity, SensorEntity):
     dose's start. A null therefore means "no new dose information", not
     "the last dose never happened", so the last known document is kept and
     the sensor keeps showing the last dose until the next one arrives.
+
+    The sensor also feeds its chemical's `PoolsideDoseTotalSensor`: each
+    newly completed dose (a document with a new UUID, once it carries an
+    EndDateTime) adds its amount to that running total, which a paired
+    reset button zeroes.
     """
 
     entity_description: PoolsideBodySensorDescription
@@ -1150,11 +1150,14 @@ class PoolsideBodyDoseSensor(PoolsideGroupEntity, SensorEntity):
         """Set up the last-dose sensor for one chemical of a body of water."""
         super().__init__(client, group)
         self.entity_description = description
+        self._group = group
         self._body_of_water_uuid = body_of_water_uuid
         self._attr_unique_id = (
             f"{client.controller_uuid}_{body_of_water_uuid}_{description.key}"
         )
         self._last_document: dict[str, Any] | None = None
+        self._seen_dose_uuids: set[str] | None = None
+        self._total_sensor: PoolsideDoseTotalSensor | None = None
 
     @override
     def _status_keys(self) -> set[str]:
@@ -1179,8 +1182,127 @@ class PoolsideBodyDoseSensor(PoolsideGroupEntity, SensorEntity):
             self._client, self._body_of_water_uuid, self.entity_description.field
         )
         if document is not None:
-            self._last_document = document
+            self._consider_document(document)
         return self._last_document
+
+    def _consider_document(self, document: dict[str, Any]) -> None:
+        """Record a dose document, feeding completed ones to the total."""
+        self._last_document = document
+        if self._total_sensor is None:
+            return
+        uuid = document.get("UUID")
+        if not uuid or document.get("EndDateTime") is None:
+            return
+        if self._seen_dose_uuids is None:
+            # The total sensor's restored state lists the dose UUIDs the
+            # previous session already counted; trusting it fully (no
+            # re-checking the current document) prevents a re-count when
+            # the controller replays the last dose after a restart.
+            self._seen_dose_uuids = set(self._total_sensor.restored_uuids)
+        if uuid in self._seen_dose_uuids:
+            return
+        self._seen_dose_uuids.add(uuid)
+        if (amount := _dose_amount(document)) is not None:
+            self._total_sensor.add(amount)
+
+    def reset(self) -> None:
+        """Zero the running total and forget counted doses."""
+        self._seen_dose_uuids = set()
+        if self._total_sensor is not None:
+            self._total_sensor.set_value(0.0)
+
+
+class PoolsideDoseTotalSensor(
+    PoolsideGroupEntity, RestoreEntity, SensorEntity
+):
+    """A running total of one chemical's dosed amounts since the last reset.
+
+    The last-dose sensor reports each dose once (recognized by the dose
+    document's UUID), and this sensor accumulates those amounts. The
+    counter persists across HA restarts, so a tank's count-up continues
+    until its reset button is pressed; an automation can trigger at a
+    threshold to warn that a tank is nearly empty. Disabled by default:
+    installs that prefer count-down from the vendor's tank tracking never
+    see it.
+    """
+
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(
+        self,
+        client: PoolsideClient,
+        group: PoolsideGroup,
+        body_of_water_uuid: str,
+        dose_sensor: PoolsideBodyDoseSensor,
+    ) -> None:
+        """Set up the dose-total sensor for one chemical of a body of water."""
+        super().__init__(client, group)
+        self._body_of_water_uuid = body_of_water_uuid
+        self._attr_unique_id = (
+            f"{client.controller_uuid}_{body_of_water_uuid}"
+            f"_{dose_sensor.entity_description.key}_total"
+        )
+        self._attr_translation_key = f"{dose_sensor.entity_description.key}_total"
+        self._attr_native_unit_of_measurement = (
+            dose_sensor.entity_description.native_unit_of_measurement
+        )
+        self._dose_sensor = dose_sensor
+        self._total: float = 0.0
+        self._restored_uuids: set[str] = set()
+
+    @override
+    def _status_keys(self) -> set[str]:
+        """Follow the last-dose sensor's pushes."""
+        return {self._body_of_water_uuid}
+
+    @property
+    def restored_uuids(self) -> set[str]:
+        """Dose UUIDs that the previous session had already counted."""
+        return self._restored_uuids
+
+    @property
+    @override
+    def native_value(self) -> float | None:
+        """Return the dosed-since-reset total, in the chemical's unit."""
+        return self._total
+
+    def add(self, amount: float) -> None:
+        """Add one dose's amount to the total."""
+        self._total = round(self._total + amount, 3)
+        self.async_write_ha_state()
+
+    def set_value(self, value: float) -> None:
+        """Set the total directly (the reset path)."""
+        self._total = value
+        self.async_write_ha_state()
+
+    @property
+    @override
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return bookkeeping details for debugging the counter."""
+        return {
+            "counted_dose_uuids": sorted(self._restored_uuids)
+            if not self._dose_sensor._seen_dose_uuids
+            else sorted(self._dose_sensor._seen_dose_uuids),
+        }
+
+    @override
+    async def async_added_to_hass(self) -> None:
+        """Restore the pre-restart total, then wire the feeding sensor."""
+        await super().async_added_to_hass()
+        if (state := await self.async_get_last_state()) is not None:
+            try:
+                self._total = float(state.state)
+            except (TypeError, ValueError):
+                self._total = 0.0
+            if (extra := state.attributes.get("counted_dose_uuids")) is not None:
+                self._restored_uuids = set(extra)
+        self._dose_sensor._total_sensor = self
+        # Replay what's already known so totals survive restarts that
+        # happened between the last dose and the next push.
+        self._dose_sensor._consider_document(
+            self._dose_sensor._last_document
+        ) if self._dose_sensor._last_document else None
 
 
 class PoolsideBodyWaterQualitySensor(PoolsideGroupEntity, SensorEntity):

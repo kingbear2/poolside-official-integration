@@ -16,7 +16,7 @@
     },
     "step": {
       "pair": {
-        "description": "On your Poolside controller or in the Poolside app, approve the pairing request from “{fingerprint}”. Confirm the code shown there matches: {fingerprint}",
+        "description": "On your Poolside controller or in the Poolside app, approve the pairing request from \u201c{fingerprint}\u201d. Confirm the code shown there matches: {fingerprint}",
         "title": "Approve this connection"
       },
       "reauth_confirm": {
@@ -68,6 +68,15 @@
       },
       "acid_dose": {
         "name": "Last acid dose"
+      },
+      "acid_dose_total": {
+        "name": "Acid dosed since last reset"
+      },
+      "chlorine_dose_total": {
+        "name": "Chlorine dosed since last reset"
+      },
+      "salt_chlorinator_dose_total": {
+        "name": "Salt chlorinator dosed since last reset"
       },
       "actuator_state": {
         "name": "State",
@@ -165,6 +174,11 @@
           "false": "False",
           "true": "True"
         }
+      }
+    },
+    "button": {
+      "dose_reset": {
+        "name": "Reset {chemical} dose counter"
       }
     }
   },

@@ -24,6 +24,45 @@ from custom_components.poolside.sensor import (
     _water_quality_value,
 )
 
+
+def _dose_feeder():
+    """A minimal dose-sensor double: considers documents it's shown."""
+    seen: set[str] = set()
+    added: list[float] = []
+
+    class Feed:
+        restored_uuids: set[str] = set()
+
+        def consider(self, doc: dict) -> None:
+            uuid = doc.get("UUID")
+            if not uuid or doc.get("EndDateTime") is None or uuid in seen:
+                return
+            seen.add(uuid)
+            if (amount := _dose_amount(doc)) is not None:
+                added.append(amount)
+
+    return Feed(), seen, added
+
+
+def test_dose_counter_counts_each_dose_once():
+    """Each completed dose (unique UUID) adds its amount exactly once."""
+    feeder, seen, added = _dose_feeder()
+    feeder.consider(REAL_DOSE_EVENT)
+    feeder.consider(REAL_DOSE_EVENT)  # same UUID re-push: not double-counted
+    assert added == [5.0]
+    next_dose = dict(REAL_DOSE_EVENT, UUID="bbbbbbbb-cd2e-4e33-8444-555555555666",
+                     DoseAmount=1.0, EndDateTime="2026-08-31T14:30:00-05:00")
+    feeder.consider(next_dose)
+    assert added == [5.0, 1.0]
+
+
+def test_dose_counter_skips_incomplete_and_missing_uuid():
+    """A running dose (no EndDateTime yet) or a UUID-less doc counts nothing."""
+    feeder, seen, added = _dose_feeder()
+    feeder.consider(dict(REAL_DOSE_EVENT, EndDateTime=None))
+    feeder.consider({"DoseAmount": 9.9})
+    assert added == []
+
 # A real dose event captured from a controller's Device.setStatus push, as
 # it arrives on the wire: the document JSON-encoded inside the string value.
 REAL_DOSE_EVENT = {
