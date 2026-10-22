@@ -15,8 +15,10 @@ your network via zeroconf and talks to it over an encrypted websocket session
   where supported
 - **switch** — single-speed pumps and other on/off controls
 - **select** — heating/cooling mode selection
-- **sensor** — water temperature, body-of-water state, estimated ready time
-  while heating (the app's "ready in"), site mode, and optional read-only pool
+- **sensor** — water temperature, body-of-water state, water quality, last
+  chemical dose per dosing system, last-minute energy consumption (electric
+  watts and gas Btu), estimated ready time while heating (the app's "ready
+  in"), heater timed-session end, site mode, and optional read-only pool
   device telemetry
 
 ## Requirements

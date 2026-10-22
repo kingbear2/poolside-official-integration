@@ -66,6 +66,9 @@
           "on": "[%key:common::state::on%]"
         }
       },
+      "acid_dose": {
+        "name": "Last acid dose"
+      },
       "actuator_state": {
         "name": "State",
         "state": {
@@ -78,6 +81,9 @@
           "overload": "Overload",
           "waiting_to_move": "Waiting"
         }
+      },
+      "chlorine_dose": {
+        "name": "Last chlorine dose"
       },
       "current_state": {
         "name": "Water state",
@@ -113,8 +119,20 @@
       "free_chlorine": {
         "name": "Free chlorine"
       },
+      "gas_consumption": {
+        "name": "Gas consumption"
+      },
+      "on_until": {
+        "name": "{control_name} on until"
+      },
       "orp": {
         "name": "ORP"
+      },
+      "power_consumption": {
+        "name": "Power consumption"
+      },
+      "salt_chlorinator_dose": {
+        "name": "Last salt chlorinator dose"
       },
       "salt_level": {
         "name": "Salt level"
@@ -130,6 +148,16 @@
       },
       "total_chlorine": {
         "name": "Total chlorine"
+      },
+      "water_quality_state": {
+        "name": "Water quality",
+        "state": {
+          "alert": "Alert",
+          "good": "Good",
+          "low": "Low",
+          "none": "None",
+          "ok": "OK"
+        }
       },
       "winterized": {
         "name": "Winterized",
