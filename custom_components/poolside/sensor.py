@@ -866,6 +866,9 @@ async def async_setup_entry(
     async_add_entities(entities)
 
     added: set[str] = set()
+    # The heater pool device, if the site has one: gas consumption and the
+    # heater egg-timer attach to it.
+    heater_device = _heater_device(data.pool_devices)
 
     @callback
     def _async_add_reported_body_sensors() -> None:
@@ -988,9 +991,7 @@ async def async_setup_entry(
 
     # Heater "egg timer" sensors are added eagerly for every temperature
     # control; while no timed session runs the value is no data. A heater
-    # that can never report the item simply stays at no data. Timer and
-    # gas sensors attach to the heater device when the site has one.
-    heater_device = _heater_device(data.pool_devices)
+    # that can never report the item simply stays at no data.
     heaters = [
         control
         for control in data.controls
