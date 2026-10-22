@@ -152,7 +152,7 @@ def _async_register_devices(
         device_registry.async_get_or_create(
             config_entry_id=entry.entry_id,
             identifiers={(DOMAIN, device.uuid)},
-            via_device=(DOMAIN, client.controller_uuid),
+            via_device_id=(DOMAIN, client.controller_uuid),
             name=device.name,
             manufacturer="Poolside",
             model=device.device_type,

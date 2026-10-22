@@ -15,7 +15,7 @@ from typing import override
 
 from . import PoolsideConfigEntry
 from .const import DOMAIN
-from .entity import PoolsideEntity, PoolsideGroupEntity
+from .entity import PoolsideGroupEntity
 
 DOSE_KEY_TO_CHEMICAL = {
     "acid_dose": "acid",
@@ -37,7 +37,7 @@ async def async_setup_entry(
     )
 
 
-class PoolsideDoseResetButton(PoolsideEntity, ButtonEntity):
+class PoolsideDoseResetButton(PoolsideGroupEntity, ButtonEntity):
     """Resets one chemical's dosed-since-reset counter to zero.
 
     Attaches to the same device as its dose sensor - the chemical pump
@@ -50,8 +50,7 @@ class PoolsideDoseResetButton(PoolsideEntity, ButtonEntity):
 
     def __init__(self, client, dose_sensor) -> None:
         """Set up the reset button for one chemical of a body of water."""
-        client, group = dose_sensor._client, dose_sensor._group
-        super().__init__(client, group)
+        super().__init__(client, dose_sensor._group)
         if getattr(dose_sensor, "_device", None) is not None:
             self._attr_device_info = DeviceInfo(
                 identifiers={(DOMAIN, dose_sensor._device.uuid)}
