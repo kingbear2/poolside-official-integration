@@ -72,9 +72,6 @@
       "ph": {
         "default": "mdi:ph"
       },
-      "power_consumption": {
-        "default": "mdi:flash"
-      },
       "salt_chlorinator_dose": {
         "default": "mdi:shaker-outline"
       },

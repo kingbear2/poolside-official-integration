@@ -16,7 +16,7 @@
     },
     "step": {
       "pair": {
-        "description": "On your Poolside controller or in the Poolside app, approve the pairing request from \u201c{fingerprint}\u201d. Confirm the code shown there matches: {fingerprint}",
+        "description": "On your Poolside controller or in the Poolside app, approve the pairing request from “{fingerprint}”. Confirm the code shown there matches: {fingerprint}",
         "title": "Approve this connection"
       },
       "reauth_confirm": {
@@ -127,9 +127,6 @@
       },
       "orp": {
         "name": "ORP"
-      },
-      "power_consumption": {
-        "name": "Power consumption"
       },
       "salt_chlorinator_dose": {
         "name": "Last salt chlorinator dose"

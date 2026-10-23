@@ -253,14 +253,6 @@ class PoolsideBodyEnergySensorDescription(SensorEntityDescription):
 
 ENERGY_SENSORS = (
     PoolsideBodyEnergySensorDescription(
-        key="power_consumption",
-        translation_key="power_consumption",
-        document_key=ENERGY_WATTS_KEY,
-        device_class=SensorDeviceClass.POWER,
-        native_unit_of_measurement=UnitOfPower.WATT,
-        state_class=SensorStateClass.MEASUREMENT,
-    ),
-    PoolsideBodyEnergySensorDescription(
         key="gas_consumption",
         translation_key="gas_consumption",
         document_key=ENERGY_NATURAL_GAS_KEY,
