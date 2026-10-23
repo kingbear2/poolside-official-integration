@@ -92,10 +92,21 @@ class StubClient:
     def __init__(self, status: dict[str, dict]) -> None:
         """Store the raw status by (uuid, field)."""
         self._status = status
+        self.site_uuid = None
 
     def get_status(self, uuid: str, field: str):
         """Return the raw value pushed for (uuid, field)."""
         return self._status.get(uuid, {}).get(field)
+
+
+def test_energy_document_prefers_body_falls_back_to_site():
+    """The site-streamed document is found when no body item exists."""
+    client = StubClient({
+        BODY: {},
+        "site-uuid": {"LastMinuteOfEnergyConsumption": '{"TotalWattsUsed": 123}'},
+    })
+    client.site_uuid = "site-uuid"
+    assert _energy_document(client, BODY) == {"TotalWattsUsed": 123}
 
 
 def _encoded(value) -> str:

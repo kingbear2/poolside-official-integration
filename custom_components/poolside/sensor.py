@@ -445,14 +445,23 @@ def _dose_extra_attributes(document: dict[str, Any] | None) -> dict[str, Any]:
 def _energy_document(
     client: PoolsideClient, body_of_water_uuid: str
 ) -> dict[str, Any] | None:
-    """Return the body of water's last-minute energy document, if any."""
-    return _json_document(
-        body_of_water_uuid,
-        LAST_MINUTE_OF_ENERGY_CONSUMPTION_FIELD,
-        client.get_status(
-            body_of_water_uuid, LAST_MINUTE_OF_ENERGY_CONSUMPTION_FIELD
-        ),
-    )
+    """Return the body of water's last-minute energy document, if any.
+
+    The controller reports the document under its site status; bodies of
+    water are checked first all the same, so installs that stream the
+    item per-body keep working.
+    """
+    for uuid in (body_of_water_uuid, client.site_uuid):
+        if not uuid:
+            continue
+        document = _json_document(
+            uuid,
+            LAST_MINUTE_OF_ENERGY_CONSUMPTION_FIELD,
+            client.get_status(uuid, LAST_MINUTE_OF_ENERGY_CONSUMPTION_FIELD),
+        )
+        if document is not None:
+            return document
+    return None
 
 
 def _energy_total_reported(
@@ -1462,8 +1471,17 @@ class PoolsideBodyEnergySensor(PoolsideGroupEntity, SensorEntity):
 
     @override
     def _status_keys(self) -> set[str]:
-        """Return the body-of-water key its energy arrives under."""
-        return {self._body_of_water_uuid}
+        """The body key and the site key: the item streams under the site.
+
+        The controller carries `LastMinuteOfEnergyConsumption` on its site
+        status (observed: the body-of-water item never carries it), but
+        installs differ about where stream items live; the body key is
+        kept first and the site covered with the same listener set.
+        """
+        keys = {self._body_of_water_uuid}
+        if self._client.site_uuid:
+            keys.add(self._client.site_uuid)
+        return keys
 
     @property
     @override
