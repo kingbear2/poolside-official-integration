@@ -71,6 +71,7 @@ from homeassistant.const import (
     UnitOfVolumeFlowRate,
 )
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_point_in_utc_time
@@ -1330,6 +1331,7 @@ class PoolsideDoseTotalSensor(
             )
         self._dose_sensor = dose_sensor
         self._total: float = 0.0
+        self._reset_at: str | None = None
         self._restored_uuids: set[str] = set()
 
     @override
@@ -1356,6 +1358,7 @@ class PoolsideDoseTotalSensor(
     def set_value(self, value: float) -> None:
         """Set the total directly (the reset path)."""
         self._total = value
+        self._reset_at = dt_util.now().isoformat(timespec="seconds")
         self.async_write_ha_state()
 
     @property
@@ -1363,6 +1366,7 @@ class PoolsideDoseTotalSensor(
     def extra_state_attributes(self) -> dict[str, Any]:
         """Return bookkeeping details for debugging the counter."""
         return {
+            "last_reset": self._reset_at,
             "counted_dose_uuids": sorted(self._restored_uuids)
             if not self._dose_sensor._seen_dose_uuids
             else sorted(self._dose_sensor._seen_dose_uuids),
@@ -1379,6 +1383,7 @@ class PoolsideDoseTotalSensor(
                 self._total = 0.0
             if (extra := state.attributes.get("counted_dose_uuids")) is not None:
                 self._restored_uuids = set(extra)
+            self._reset_at = state.attributes.get("last_reset")
         self._dose_sensor._total_sensor = self
         # Replay what's already known so totals survive restarts that
         # happened between the last dose and the next push.

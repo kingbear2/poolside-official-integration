@@ -10,6 +10,8 @@ your network via zeroconf and talks to it over an encrypted websocket session
 ## Features
 
 - **climate** — heater/chiller control per body of water
+- **tank tracking (DIY)** — see [TANK_TRACKING.md](TANK_TRACKING.md) for a
+  helpers recipe built on the dosed-since-reset counters
 - **fan** — variable-speed pumps and water features
 - **light** — underwater/landscape lights, including effects and brightness
   where supported
